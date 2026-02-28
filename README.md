@@ -1,296 +1,168 @@
 # claw-vault
 
-**Encrypted credential vault with TOTP (Google Authenticator) unlock for self-hosted [OpenClaw](https://github.com/openclaw/openclaw) deployments.**
-
-If you run OpenClaw on a VPS, your API keys (Gemini, Telegram, Notion, OpenAI, etc.) are stored in plaintext inside `~/.openclaw/openclaw.json`. Anyone who gains access to your server — through a backup, snapshot, directory traversal, or a compromised process — can steal all of them instantly.
-
-claw-vault solves this.
+**Keep your OpenClaw API keys off disk. Unlock with a password + Google Authenticator.**
 
 ---
 
-## The problem
+## How it works in practice
 
-OpenClaw stores credentials in plaintext ([issue #7916](https://github.com/openclaw/openclaw/issues/7916), [issue #11829](https://github.com/openclaw/openclaw/issues/11829), [discussion #9676](https://github.com/openclaw/openclaw/discussions/9676)):
+After setup, this is all you do after a VPS reboot:
+
+```bash
+./start-openclaw.sh
+```
+
+That's it. It prompts for your password and a 6-digit code from Google Authenticator, then starts OpenClaw with all credentials injected. When you stop it — credentials are wiped from disk again.
+
+**At rest, your `openclaw.json` looks like this:**
 
 ```json
 {
   "channels": {
-    "telegram": { "botToken": "8576904436:AAHz..." }
+    "telegram": { "botToken": "" }
   },
   "skills": {
     "entries": {
-      "notion": { "apiKey": "ntn_26765..." }
+      "notion": { "apiKey": "" }
     }
   }
 }
 ```
 
-Security researchers found **30,000+ exposed OpenClaw instances** in a 12-day scan (Feb 2026), and **7.1% of ClawHub marketplace skills** leak credentials. The official docs recommend `chmod 600` — necessary, but not sufficient if someone accesses your disk or takes a backup.
+Empty strings. Anyone who steals your disk, snapshot, or backup gets nothing.
 
 ---
 
-## How claw-vault works
+## Why this exists
 
-```
-At rest (vault locked):
-  ~/.openclaw/openclaw.json  →  all API key fields are empty strings
-  ~/.claw-vault/vault.json   →  AES-256-GCM encrypted blob  ← useless without password + phone
+OpenClaw stores API keys in plaintext in `~/.openclaw/openclaw.json`. Security researchers found **30,000+ exposed instances** in a 12-day scan (Feb 2026), and **7.1% of ClawHub skills** leak credentials. The official recommendation is `chmod 600` — but that doesn't help if someone takes a backup or snapshot of your VPS.
 
-After unlock (vault open):
-  Password + Google Authenticator code
-       │
-       ▼
-  Argon2id KDF  →  unlock key  →  decrypts master key (in RAM only)
-                                       │
-                                       ▼
-                              inject_openclaw.py patches openclaw.json
-                              with real values just-in-time
-
-On exit / lock:
-  inject_openclaw.py strips values back out  →  openclaw.json is clean again
-```
-
-**What's encrypted:** everything in `~/.claw-vault/vault.json` — your credentials, the master key, and the TOTP seed — using AES-256-GCM with a 256-bit random master key.
-
-**What's in RAM only:** the decrypted master key, held by a background daemon process. Never written to disk.
-
-**TOTP role:** Google Authenticator acts as a gate — you must provide a valid 6-digit code on every unlock. The code is verified cryptographically (TOTP seed is itself encrypted in the vault).
+This has been [requested](https://github.com/openclaw/openclaw/issues/7916) [multiple](https://github.com/openclaw/openclaw/issues/11829) [times](https://github.com/openclaw/openclaw/discussions/9676) with no built-in solution. claw-vault fills that gap.
 
 ---
 
-## Security model
+## Setup (one time)
 
-| Threat | Protected? |
-|---|---|
-| Attacker steals disk / backup copy | ✅ Encrypted blobs only — useless without password + phone |
-| Attacker reads filesystem while vault is **locked** | ✅ Full protection |
-| Non-root process on same machine while **unlocked** | ✅ Unix socket is `0600`, root-only |
-| Attacker gets **root shell** while unlocked | ⚠️ Can query vault socket or dump RAM — true of all software vaults |
-
-No software-only solution protects against a live root compromise. claw-vault protects your most realistic threat: **at-rest theft of credentials from disk, backups, and snapshots**.
-
----
-
-## Requirements
-
-- Linux (uses `os.fork`, Unix sockets)
-- Python 3.11+
-- OpenClaw installed and configured at `~/.openclaw/`
-
----
-
-## Installation
+**1. Install**
 
 ```bash
-# 1. Clone
 git clone https://github.com/nktll/claw-vault
 cd claw-vault
-
-# 2. Install
 pip install -e .
-
-# 3. Verify
-claw-vault --help
 ```
 
-Or install directly without cloning:
-
-```bash
-pip install claw-vault
-```
-
----
-
-## Quick start
-
-### Step 1 — Initialize the vault
+**2. Initialize the vault**
 
 ```bash
 claw-vault init
 ```
 
-This will:
-- Ask you to set a strong passphrase
-- Generate a TOTP secret and show a QR code — **scan it with Google Authenticator**
-- Write the vault to `~/.claw-vault/vault.json` (encrypted, safe to back up)
+Sets your passphrase and shows a QR code — scan it with Google Authenticator.
 
-### Step 2 — Store your credentials
+**3. Store your credentials**
 
 ```bash
-claw-vault add GEMINI_API_KEY        # prompts for value securely
+claw-vault add GEMINI_API_KEY        # prompts securely, nothing shown on screen
 claw-vault add TELEGRAM_TOKEN
 claw-vault add GATEWAY_AUTH_TOKEN
 claw-vault add NOTION_API_TOKEN
 claw-vault add OPENAI_API_KEY
 ```
 
-### Step 3 — Strip plaintext from openclaw.json
+**4. Strip plaintext from openclaw.json**
 
 ```bash
 python3 inject_openclaw.py strip
 ```
 
-Your `openclaw.json` now has empty strings for all API key fields. Safe at rest.
-
-### Step 4 — Start OpenClaw via claw-vault
-
-```bash
-./start-openclaw.sh
-```
-
-This will:
-1. Unlock the vault (prompts password + Google Authenticator code)
-2. Inject credentials into `openclaw.json` just-in-time
-3. Start OpenClaw
-4. Strip credentials back out on exit (Ctrl+C, kill, crash)
+Done. Your keys are now encrypted in `~/.claw-vault/vault.json` and gone from `openclaw.json`.
 
 ---
 
-## Daily workflow
-
-After every VPS reboot:
+## Daily use
 
 ```bash
-# Option A — everything in one command:
-./start-openclaw.sh
-
-# Option B — manual steps:
-claw-vault unlock                    # password + Google Authenticator
-python3 inject_openclaw.py inject    # patch openclaw.json
-openclaw start                       # start agent
+./start-openclaw.sh          # unlock + start openclaw agent
+./start-openclaw.sh mcp      # unlock + start MCP HTTP server
 ```
 
-The vault daemon runs in the background. OpenClaw can restart freely without re-unlocking — only a full reboot or `claw-vault lock` requires re-authentication.
+The vault stays unlocked in the background — OpenClaw can restart freely without re-authenticating. Only a full reboot requires unlocking again.
 
 ---
 
-## MCP HTTP server
+## What's protected
 
-If you use the OpenClaw MCP HTTP server:
-
-```bash
-./start-openclaw.sh mcp
-# or
-claw-vault unlock
-claw-vault run -- npm run start:http   # injects all vault keys as env vars
-```
-
----
-
-## Custom credential mapping
-
-By default, claw-vault maps these vault keys to `openclaw.json` paths:
-
-| Vault key | openclaw.json path |
+| Scenario | Safe? |
 |---|---|
-| `GEMINI_API_KEY` | `agents.defaults.memorySearch.remote.apiKey` |
-| `TELEGRAM_TOKEN` | `channels.telegram.botToken` |
-| `GATEWAY_AUTH_TOKEN` | `gateway.auth.token` |
-| `NOTION_API_TOKEN` | `skills.entries.notion.apiKey` |
+| Someone steals your disk or VPS backup | ✅ Encrypted blobs, useless without password + phone |
+| Filesystem access while vault is locked | ✅ Full protection |
+| Another process on the same machine | ✅ Vault socket is owner-only (`0600`) |
+| Full root access while vault is unlocked | ⚠️ No software vault can protect against this |
 
-To add or override mappings, create `~/.claw-vault/openclaw-map.json`:
+---
+
+## Custom mappings
+
+The default mapping covers standard OpenClaw credentials. To add your own, create `~/.claw-vault/openclaw-map.json`:
 
 ```json
 {
-  "SLACK_TOKEN":    ["channels", "slack", "botToken"],
-  "DISCORD_TOKEN":  ["channels", "discord", "botToken"],
-  "MY_CUSTOM_KEY":  ["skills", "entries", "myskill", "apiKey"]
+  "SLACK_TOKEN":   ["channels", "slack", "botToken"],
+  "DISCORD_TOKEN": ["channels", "discord", "botToken"]
 }
 ```
 
-Custom mappings are merged with the defaults.
+Custom entries are merged with the defaults.
 
 ---
 
-## All CLI commands
+## All commands
 
 ```bash
-claw-vault init                    # Set up vault, enroll Google Authenticator
-claw-vault add KEY [VALUE]         # Add / update a credential
-claw-vault remove KEY              # Remove a credential
-claw-vault list                    # List stored credential names
-claw-vault get KEY                 # Print a credential value (vault must be unlocked)
-claw-vault unlock                  # Unlock vault (password + TOTP → starts daemon)
-claw-vault lock                    # Lock vault, wipe master key from RAM
-claw-vault status                  # Show lock status and stored key count
-claw-vault run -- COMMAND          # Run any command with credentials as env vars
+claw-vault init               # first-time setup
+claw-vault add KEY [VALUE]    # store a credential
+claw-vault remove KEY         # delete a credential
+claw-vault list               # show stored key names
+claw-vault unlock             # password + TOTP → start daemon
+claw-vault lock               # wipe master key from RAM
+claw-vault status             # locked / unlocked?
+claw-vault get KEY            # print a value (requires unlocked)
+claw-vault run -- COMMAND     # run any command with credentials as env vars
 ```
 
 ---
 
-## TypeScript / Node.js client
-
-For Node.js processes that need to fetch secrets at runtime (not just at startup via env vars):
+## Node.js / TypeScript client
 
 ```typescript
-import { getSecret, getAllSecrets, isVaultUnlocked } from './vault-client.js';
-
-if (!(await isVaultUnlocked())) {
-  console.error('Run: claw-vault unlock');
-  process.exit(1);
-}
+import { getSecret, getAllSecrets } from './vault-client.js';
 
 const token = await getSecret('TELEGRAM_TOKEN');
-// or inject everything into process.env:
-const secrets = await getAllSecrets();
-Object.assign(process.env, secrets);
+// or load everything into process.env:
+Object.assign(process.env, await getAllSecrets());
 ```
 
 ---
 
-## Vault file structure
+<details>
+<summary>Security & cryptographic details</summary>
 
-```
-~/.claw-vault/
-└── vault.json        # Everything encrypted — safe to back up, useless without password + phone
-```
-
-```json
-{
-  "version": 1,
-  "kdf": {
-    "algorithm": "argon2id",
-    "salt": "<32 random bytes, base64>",
-    "time_cost": 3,
-    "memory_cost": 65536,
-    "parallelism": 4
-  },
-  "totp": {
-    "nonce": "...",
-    "ciphertext": "..."
-  },
-  "master_key": {
-    "nonce": "...",
-    "ciphertext": "..."
-  },
-  "credentials": {
-    "GEMINI_API_KEY": { "nonce": "...", "ciphertext": "..." },
-    "TELEGRAM_TOKEN": { "nonce": "...", "ciphertext": "..." }
-  }
-}
-```
-
----
-
-## Cryptographic details
-
-- **Cipher:** AES-256-GCM (authenticated encryption — detects tampering)
+- **Cipher:** AES-256-GCM — authenticated encryption, detects tampering
 - **KDF:** Argon2id — 64 MB memory, 3 iterations, 4 lanes (OWASP Interactive minimum)
-- **Master key:** 256-bit random, never derived from password
-- **TOTP:** RFC 6238, ±30 second clock drift tolerance, verified via pyotp
-- **Writes:** atomic (write to `.tmp`, then `rename`) — no partial state on disk
-- **Brute-force protection:** 5 failed attempts → 60-second lockout
+- **Master key:** 256-bit random, never derived from password, RAM-only while unlocked
+- **TOTP:** RFC 6238, ±30s clock drift tolerance
+- **Writes:** atomic (`rename`-based) — no partial state on disk
+- **Brute-force:** 5 failures → 60s lockout
+
+The TOTP seed and master key are both encrypted in `~/.claw-vault/vault.json` alongside your credentials. Backing up that file is safe — it's useless without your passphrase and phone.
+
+</details>
 
 ---
 
 ## Contributing
 
 Issues and PRs welcome. See [open issues](https://github.com/nktll/claw-vault/issues).
-
-Related upstream OpenClaw issues this project addresses:
-- [#7916 — Support for encrypted API keys / secrets management](https://github.com/openclaw/openclaw/issues/7916)
-- [#11829 — Security Roadmap: Protecting API Keys from Agent Access](https://github.com/openclaw/openclaw/issues/11829)
-- [#9676 — RFC: Agent-Blind Credential Architecture](https://github.com/openclaw/openclaw/discussions/9676)
 
 ---
 
