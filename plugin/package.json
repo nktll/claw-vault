@@ -1,0 +1,33 @@
+{
+  "name": "openclaw-plugin-claw-vault",
+  "version": "0.1.0",
+  "description": "Encrypted credential vault with TOTP unlock for OpenClaw — keeps API keys off disk",
+  "main": "index.ts",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "vault",
+    "credentials",
+    "security",
+    "totp",
+    "secrets"
+  ],
+  "author": "nktll",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nktll/claw-vault.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/nktll/claw-vault",
+  "peerDependencies": {
+    "openclaw": ">=2026.1.0"
+  },
+  "devDependencies": {
+    "openclaw": ">=2026.1.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -43,15 +43,21 @@ This has been [requested](https://github.com/openclaw/openclaw/issues/7916) [mul
 
 ## Setup (one time)
 
-**1. Install**
+**1. Install the core vault**
 
 ```bash
-git clone https://github.com/nktll/claw-vault
-cd claw-vault
-pip install -e .
+pip install claw-vault
 ```
 
-**2. Initialize the vault**
+**2. Install the OpenClaw plugin**
+
+```bash
+openclaw plugins install openclaw-plugin-claw-vault
+```
+
+This registers the plugin so OpenClaw automatically injects credentials at startup and strips them on exit. It also gives the agent a built-in skill to manage the vault (`claw-vault status`, `claw-vault lock`, etc.).
+
+**3. Initialize the vault**
 
 ```bash
 claw-vault init
@@ -59,7 +65,7 @@ claw-vault init
 
 Sets your passphrase and shows a QR code — scan it with Google Authenticator.
 
-**3. Store your credentials**
+**4. Store your credentials**
 
 ```bash
 claw-vault add GEMINI_API_KEY        # prompts securely, nothing shown on screen
@@ -69,7 +75,7 @@ claw-vault add NOTION_API_TOKEN
 claw-vault add OPENAI_API_KEY
 ```
 
-**4. Strip plaintext from openclaw.json**
+**5. Strip plaintext from openclaw.json**
 
 ```bash
 python3 inject_openclaw.py strip
@@ -77,13 +83,24 @@ python3 inject_openclaw.py strip
 
 Done. Your keys are now encrypted in `~/.claw-vault/vault.json` and gone from `openclaw.json`.
 
+> **Without the plugin (manual mode):** skip step 2 and use `./start-openclaw.sh` to start OpenClaw — it handles inject/strip via a wrapper script instead.
+
 ---
 
 ## Daily use
 
+**With the plugin installed**, just unlock the vault before starting OpenClaw:
+
 ```bash
-./start-openclaw.sh          # unlock + start openclaw agent
-./start-openclaw.sh mcp      # unlock + start MCP HTTP server
+claw-vault unlock      # password + Google Authenticator code
+openclaw start         # plugin handles inject/strip automatically
+```
+
+**Without the plugin:**
+
+```bash
+./start-openclaw.sh          # unlock + inject + start agent
+./start-openclaw.sh mcp      # unlock + inject + start MCP HTTP server
 ```
 
 The vault stays unlocked in the background — OpenClaw can restart freely without re-authenticating. Only a full reboot requires unlocking again.

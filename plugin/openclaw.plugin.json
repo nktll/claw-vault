@@ -1,0 +1,33 @@
+{
+  "id": "claw-vault",
+  "name": "claw-vault",
+  "description": "Encrypted credential vault with TOTP (Google Authenticator) unlock. Keeps API keys off disk — injects them at startup, strips them on exit.",
+  "version": "0.1.0",
+  "repository": "github:nktll/claw-vault",
+  "skills": ["./skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "autoInject": {
+        "type": "boolean",
+        "default": true,
+        "description": "Automatically inject credentials into openclaw.json when vault is unlocked at startup"
+      },
+      "autoStrip": {
+        "type": "boolean",
+        "default": true,
+        "description": "Automatically strip credentials from openclaw.json on shutdown"
+      },
+      "injectScript": {
+        "type": "string",
+        "description": "Path to inject_openclaw.py (auto-detected if not set)"
+      }
+    }
+  },
+  "uiHints": {
+    "autoInject": { "label": "Auto-inject on startup" },
+    "autoStrip":  { "label": "Auto-strip on shutdown" },
+    "injectScript": { "label": "inject_openclaw.py path", "placeholder": "~/.openclaw/extensions/claw-vault/inject_openclaw.py" }
+  }
+}
