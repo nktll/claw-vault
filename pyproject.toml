@@ -31,8 +31,8 @@ dependencies = [
 claw-vault = "claw_vault:main"
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/claw-vault"
-Issues = "https://github.com/YOUR_USERNAME/claw-vault/issues"
+Homepage = "https://github.com/nktll/claw-vault"
+Issues = "https://github.com/nktll/claw-vault/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

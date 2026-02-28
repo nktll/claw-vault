@@ -83,7 +83,7 @@ No software-only solution protects against a live root compromise. claw-vault pr
 
 ```bash
 # 1. Clone
-git clone https://github.com/YOUR_USERNAME/claw-vault
+git clone https://github.com/nktll/claw-vault
 cd claw-vault
 
 # 2. Install
@@ -285,7 +285,7 @@ Object.assign(process.env, secrets);
 
 ## Contributing
 
-Issues and PRs welcome. See [open issues](https://github.com/YOUR_USERNAME/claw-vault/issues).
+Issues and PRs welcome. See [open issues](https://github.com/nktll/claw-vault/issues).
 
 Related upstream OpenClaw issues this project addresses:
 - [#7916 — Support for encrypted API keys / secrets management](https://github.com/openclaw/openclaw/issues/7916)
